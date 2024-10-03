@@ -1,0 +1,9 @@
+tweepy==4.14.0
+openai==0.28.1
+PyGithub==1.59.1
+python-dotenv==1.0.0
+ratelimit==2.2.1
+SQLAlchemy==2.0.21
+requests==2.31.0
+cryptography==41.0.4
+python-dateutil==2.8.2 
