@@ -2,7 +2,13 @@ import re
 import sqlite3
 from github import Github
 import os
-
+import logging
+# Configure logging
+logging.basicConfig(
+    filename='logs/key_fetcher.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 # Fetch GitHub tokens
 github_token = os.getenv('GITCLASIC_TOKEN')
 github_pat_token = os.getenv('GITFINEPAT_TOKEN')
@@ -91,3 +97,5 @@ if keys:
     save_to_db(keys)
 else:
     print("No valid keys found.")
+
+logging.info("Starting key fetcher script")
