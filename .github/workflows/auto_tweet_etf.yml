@@ -1,37 +1,147 @@
-name: Auto Fetch Twitter Keys and Tweet ETF Content
+name: API Key Management and Tweet Automation
 
 on:
-  push:
-    branches:
-      - main
   schedule:
-    - cron: '0 */6 * * *'  # Runs every 6 hours
+    - cron: '0 */6 * * *'  # Run every 6 hours
+  workflow_dispatch:  # Manual trigger option
+  repository_dispatch:
+    types: [refresh-keys]
 
 jobs:
-  fetch_and_tweet:
+  setup-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.value }}
+
+    steps:
+      - name: Generate cache key
+        id: cache-key
+        run: echo "value=$(date +%Y%m%d)" >> $GITHUB_OUTPUT
+
+      - name: Create directories
+        run: |
+          mkdir -p logs
+          mkdir -p data
+
+  fetch-keys:
+    needs: setup-environment
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v3
         with:
-          python-version: '3.x'
+          python-version: '3.9'
+
+      - name: Load cached database
+        uses: actions/cache@v3
+        with:
+          path: data/keys.db
+          key: db-${{ needs.setup-environment.outputs.cache-key }}
+          restore-keys: |
+            db-
 
       - name: Install dependencies
         run: |
-          pip install requests openai pygithub tweepy  # Removed sqlite3
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Fetch Twitter API keys from GitHub and Save to Database
+      - name: Run key fetcher
         env:
-          GITCLASIC_TOKEN: ${{ secrets.GITCLASIC_TOKEN }}  # Dependabot secret
+          GITCLASIC_TOKEN: ${{ secrets.GITCLASIC_TOKEN }}
+          GITFINEPAT_TOKEN: ${{ secrets.GITFINEPAT_TOKEN }}
         run: |
           python fetch_keys.py
 
-      - name: Generate and Tweet ETF Content
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}  # Dependabot secret
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: key-fetcher-logs
+          path: logs/key_fetcher.log
+
+  tweet-management:
+    needs: [setup-environment, fetch-keys]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.9'
+
+      - name: Load database
+        uses: actions/cache@v3
+        with:
+          path: data/keys.db
+          key: db-${{ needs.setup-environment.outputs.cache-key }}
+
+      - name: Install dependencies
         run: |
-          python etf_tweet.py
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tweet bot
+        env:
+          ETF_NAME: "Synthetix DeFi ETF"
+          REPO_LINK: ${{ github.repository }}
+          HASHTAGS: "#DeFi #Crypto #ETF"
+          MAX_TWEETS: 3
+        run: python etf_tweet.py
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: tweet-bot-logs
+          path: logs/tweet_bot.log
+
+  monitoring:
+    needs: [tweet-management]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Download all logs
+        uses: actions/download-artifact@v3
+        with:
+          path: logs
+
+      - name: Check for errors
+        run: |
+          if grep -i "error" logs/**/*.log; then
+            echo "::warning ::Errors found in logs"
+            exit 1
+          fi
+
+      - name: Send notification on failure
+        if: failure()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              title: 'API Automation Workflow Failed',
+              body: 'The API automation workflow has encountered errors. Please check the logs.'
+            });
+
+  cleanup:
+    needs: [monitoring]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Cleanup old logs
+        uses: geekyeggo/delete-artifact@v2
+        with:
+          name: |
+            key-fetcher-logs
+            tweet-bot-logs
+          age: '1 week'
