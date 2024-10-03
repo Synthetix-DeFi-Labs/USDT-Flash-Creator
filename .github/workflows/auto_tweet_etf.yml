@@ -1,0 +1,37 @@
+name: Auto Fetch Twitter Keys and Tweet ETF Content
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 */6 * * *'  # Runs every 6 hours
+
+jobs:
+  fetch_and_tweet:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          pip install requests sqlite3 openai pygithub tweepy
+
+      - name: Fetch Twitter API keys from GitHub and Save to Database
+        env:
+          GITCLASIC_TOKEN: ${{ secrets.GITCLASIC_TOKEN }}
+        run: |
+          python fetch_keys.py
+
+      - name: Generate and Tweet ETF Content
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python etf_tweet.py
