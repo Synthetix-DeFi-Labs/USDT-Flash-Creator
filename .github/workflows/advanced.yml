@@ -1,0 +1,132 @@
+name: Auto-Generate and Tweet Contributions
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 */6 * * *'  # Run every 6 hours
+
+jobs:
+  generate_and_tweet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          pip install requests tweepy
+
+      - name: Generate Tweet using OpenAI API
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python - <<EOF
+          import requests
+          import json
+          import os
+
+          api_key = os.environ['OPENAI_API_KEY']
+          headers = {
+              "Authorization": f"Bearer {api_key}",
+              "Content-Type": "application/json"
+          }
+          data = {
+              "model": "text-davinci-003",
+              "prompt": "Write a concise, engaging tweet for a GitHub contribution at https://github.com/SynthetixLabs with trending hashtags like #DeFi #crypto #Synthetix. Keep it under 240 characters.",
+              "max_tokens": 60,
+              "temperature": 0.7,
+              "top_p": 1,
+              "frequency_penalty": 0.2,
+              "presence_penalty": 0.5
+          }
+          for _ in range(3):  # Retry mechanism in case of failure
+              response = requests.post("https://api.openai.com/v1/completions", headers=headers, json=data)
+              if response.status_code == 200:
+                  tweet_content = response.json()['choices'][0]['text'].strip()
+                  break
+              else:
+                  print(f"OpenAI API failed. Retrying... {_+1}/3")
+          else:
+              raise Exception("OpenAI API failed after 3 retries.")
+
+          with open('tweet.txt', 'w') as f:
+              f.write(tweet_content)
+          
+          print(f"Generated Tweet: {tweet_content}")
+          EOF
+
+      - name: Validate tweet length
+        run: |
+          TWEET_CONTENT=$(cat tweet.txt)
+          if [ ${#TWEET_CONTENT} -gt 240 ]; then
+            echo "Tweet exceeds 240 characters. Truncating..."
+            TWEET_CONTENT="${TWEET_CONTENT:0:237}..."
+          fi
+          echo "$TWEET_CONTENT" > tweet.txt
+          echo "Validated Tweet: $TWEET_CONTENT"
+
+      - name: Tweet using multiple accounts with safety measures
+        env:
+          TWITTER_CONSUMER_KEY_1: ${{ secrets.TWITTER_CONSUMER_KEY_1 }}
+          TWITTER_CONSUMER_SECRET_1: ${{ secrets.TWITTER_CONSUMER_SECRET_1 }}
+          TWITTER_ACCESS_TOKEN_1: ${{ secrets.TWITTER_ACCESS_TOKEN_KEY_1 }}
+          TWITTER_ACCESS_TOKEN_SECRET_1: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET_1 }}
+          TWITTER_CONSUMER_KEY_2: ${{ secrets.TWITTER_CONSUMER_KEY_2 }}
+          TWITTER_CONSUMER_SECRET_2: ${{ secrets.TWITTER_CONSUMER_SECRET_2 }}
+          TWITTER_ACCESS_TOKEN_2: ${{ secrets.TWITTER_ACCESS_TOKEN_KEY_2 }}
+          TWITTER_ACCESS_TOKEN_SECRET_2: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET_2 }}
+        run: |
+          python - <<EOF
+          import tweepy
+          import time
+          import os
+          import random
+          import logging
+
+          logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
+
+          def tweet(consumer_key, consumer_secret, access_token, access_token_secret):
+              auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
+              auth.set_access_token(access_token, access_token_secret)
+              api = tweepy.API(auth)
+              
+              with open('tweet.txt', 'r') as f:
+                  tweet_content = f.read().strip()
+
+              try:
+                  api.update_status(tweet_content)
+                  logging.info(f"Tweeted: {tweet_content}")
+              except tweepy.TweepError as e:
+                  logging.error(f"Failed to tweet: {e.reason}")
+
+          # Tweet using Account 1
+          tweet(
+              os.environ['TWITTER_CONSUMER_KEY_1'],
+              os.environ['TWITTER_CONSUMER_SECRET_1'],
+              os.environ['TWITTER_ACCESS_TOKEN_1'],
+              os.environ['TWITTER_ACCESS_TOKEN_SECRET_1']
+          )
+
+          # Wait for a random time between 5 to 10 minutes
+          wait_time = random.randint(300, 600)
+          logging.info(f"Waiting for {wait_time} seconds before tweeting from the next account...")
+          time.sleep(wait_time)
+
+          # Tweet using Account 2
+          tweet(
+              os.environ['TWITTER_CONSUMER_KEY_2'],
+              os.environ['TWITTER_CONSUMER_SECRET_2'],
+              os.environ['TWITTER_ACCESS_TOKEN_2'],
+              os.environ['TWITTER_ACCESS_TOKEN_SECRET_2']
+          )
+          EOF
+
+      - name: Clean up
+        run: rm tweet.txt
