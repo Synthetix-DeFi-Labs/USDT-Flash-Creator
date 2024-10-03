@@ -144,4 +144,4 @@ jobs:
           name: |
             key-fetcher-logs
             tweet-bot-logs
-          age: '1 week'
+          useGlob: true
