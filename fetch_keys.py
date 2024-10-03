@@ -1,8 +1,7 @@
 import re
-import requests
-import os
 import sqlite3
 from github import Github
+import os
 
 # Initialize GitHub API with Dependabot secret
 github_token = os.getenv('GITCLASIC_TOKEN')  # GitHub token from Dependabot secret
