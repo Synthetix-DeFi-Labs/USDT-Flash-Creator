@@ -22,16 +22,16 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests sqlite3 openai pygithub tweepy
+          pip install requests openai pygithub tweepy  # Removed sqlite3
 
       - name: Fetch Twitter API keys from GitHub and Save to Database
         env:
-          GITCLASIC_TOKEN: ${{ secrets.GITCLASIC_TOKEN }}
+          GITCLASIC_TOKEN: ${{ secrets.GITCLASIC_TOKEN }}  # Dependabot secret
         run: |
           python fetch_keys.py
 
       - name: Generate and Tweet ETF Content
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}  # Dependabot secret
         run: |
           python etf_tweet.py
